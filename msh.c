@@ -172,7 +172,134 @@ int main(void)
 
             if (pid == -1) {
                 perror("msh: fork");
-            } else if (pid == 0) {
+            } else if (pid == 0) {            #define _POSIX_C_SOURCE 200809L
+            
+            #include <errno.h>
+            #include <stdio.h>
+            #include <stdlib.h>
+            #include <string.h>
+            #include <sys/types.h>
+            #include <sys/wait.h>
+            #include <unistd.h>
+            
+            static size_t split_arguments(char *line, char **argv)
+            {
+                size_t argc = 0;
+                char *token = strtok(line, " \t");
+            
+                while (token != NULL) {
+                    argv[argc++] = token;
+                    token = strtok(NULL, " \t");
+                }
+            
+                argv[argc] = NULL;
+                return argc;
+            }
+            
+            static void print_help(void)
+            {
+                puts("Built-ins:");
+                puts("  cd [dir]  Change directory (defaults to $HOME)");
+                puts("  help      Show this help");
+                puts("  exit      Exit msh");
+                puts("External commands are run with their arguments.");
+            }
+            
+            int main(void)
+            {
+                char *line = NULL;
+                size_t line_capacity = 0;
+            
+                for (;;) {
+                    if (fputs("msh> ", stdout) == EOF || fflush(stdout) == EOF) {
+                        perror("msh: prompt");
+                        free(line);
+                        return EXIT_FAILURE;
+                    }
+            
+                    ssize_t nread = getline(&line, &line_capacity, stdin);
+                    if (nread == -1) {
+                        if (ferror(stdin)) {
+                            perror("msh: getline");
+                            free(line);
+                            return EXIT_FAILURE;
+                        }
+            
+                        break; /* EOF */
+                    }
+            
+                    size_t length = (size_t)nread;
+                    if (length > 0 && line[length - 1] == '\n') {
+                        line[--length] = '\0';
+                    }
+            
+                    size_t argv_capacity = length / 2 + length % 2 + 1;
+                    char **argv = malloc(argv_capacity * sizeof(*argv));
+                    if (argv == NULL) {
+                        perror("msh: malloc");
+                        free(line);
+                        return EXIT_FAILURE;
+                    }
+            
+                    size_t argc = split_arguments(line, argv);
+                    int exit_shell = 0;
+            
+                    if (argc > 0) {
+                        if (strcmp(argv[0], "cd") == 0) {
+                            if (argc > 2) {
+                                fprintf(stderr, "msh: usage: cd [dir]\n");
+                            } else {
+                                const char *directory =
+                                    (argc == 1) ? getenv("HOME") : argv[1];
+            
+                                if (directory == NULL) {
+                                    fprintf(stderr, "msh: HOME is not set\n");
+                                } else if (chdir(directory) == -1) {
+                                    perror("msh: cd");
+                                }
+                            }
+                        } else if (strcmp(argv[0], "help") == 0) {
+                            print_help();
+                        } else if (strcmp(argv[0], "exit") == 0) {
+                            if (argc != 1) {
+                                fprintf(stderr, "msh: usage: exit\n");
+                            } else {
+                                exit_shell = 1;
+                            }
+                        } else {
+                            pid_t pid = fork();
+            
+                            if (pid == -1) {
+                                perror("msh: fork");
+                            } else if (pid == 0) {
+                                execvp(argv[0], argv);
+                                perror(argv[0]);
+                                _exit(EXIT_FAILURE);
+                            } else {
+                                int status;
+                                pid_t waited;
+            
+                                do {
+                                    waited = waitpid(pid, &status, 0);
+                                } while (waited == -1 && errno == EINTR);
+            
+                                if (waited == -1) {
+                                    perror("msh: waitpid");
+                                }
+                            }
+                        }
+                    }
+            
+                    free(argv);
+            
+                    if (exit_shell) {
+                        break;
+                    }
+                }
+            
+                free(line);
+                return EXIT_SUCCESS;
+            }
                 execvp(argv[0], argv);
                 perror(argv[0]);
                 _exit(EXIT_FAILURE);
