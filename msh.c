@@ -40,3 +40,69 @@ int main(void)
     free(line);
     return EXIT_SUCCESS;
 }
+static size_t split_arguments(char *line, char **argv)
+{
+    size_t argc = 0;
+    char *token = strtok(line, " \t");
+
+    while (token != NULL) {
+        argv[argc++] = token;
+        token = strtok(NULL, " \t");
+    }
+
+    argv[argc] = NULL;
+    return argc;
+}
+
+int main(void)
+{
+    char *line = NULL;
+    size_t line_capacity = 0;
+
+    for (;;) {
+        if (fputs("msh> ", stdout) == EOF || fflush(stdout) == EOF) {
+            perror("msh: prompt");
+            free(line);
+            return EXIT_FAILURE;
+        }
+
+        ssize_t nread = getline(&line, &line_capacity, stdin);
+        if (nread == -1) {
+            if (ferror(stdin)) {
+                perror("msh: getline");
+                free(line);
+                return EXIT_FAILURE;
+            }
+
+            break; /* EOF */
+        }
+
+        size_t length = (size_t)nread;
+        if (length > 0 && line[length - 1] == '\n') {
+            line[--length] = '\0';
+        }
+
+        /* At most one argument per two input characters, plus the NULL slot. */
+        size_t argv_capacity = length / 2 + length % 2 + 1;
+        char **argv = malloc(argv_capacity * sizeof(*argv));
+        if (argv == NULL) {
+            perror("msh: malloc");
+            free(line);
+            return EXIT_FAILURE;
+        }
+
+        size_t argc = split_arguments(line, argv);
+
+        if (argc > 0) {
+            /*
+             * argv[0..argc-1] are the arguments and argv[argc] is NULL.
+             * Task 3 will execute this command.
+             */
+        }
+
+        free(argv);
+    }
+
+    free(line);
+    return EXIT_SUCCESS;
+}
